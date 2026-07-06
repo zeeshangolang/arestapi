@@ -1,0 +1,88 @@
+package data
+
+import (
+	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"database/sql"
+	"encoding/base32"
+	"main/internal/validator"
+	"time"
+)
+
+const (
+	ScopeAvctivation    = "activation"
+	ScopeAuthentication = "authenttion"
+)
+
+type token struct {
+	Plaintext string    `json:"token"`
+	Hash      []byte    `json:"-"`
+	Userid    int64     `json:"-"`
+	Expiry    time.Time `json:"expiry"`
+	Scope     string    `json:"scope"`
+}
+
+func CheckPlainText(v *validator.Validator, tokenPlainText string) {
+	v.Check(tokenPlainText != "", "token", "plaint text must be provided")
+	v.Check(len(tokenPlainText) == 26, "token", "must be 26 char  long")
+
+}
+
+type TokenModel struct {
+	DB *sql.DB
+}
+
+func GenerateToken(Userid int64, ttl time.Duration, scope string) (*token, error) {
+	token := &token{
+		Userid: Userid,
+		Expiry: time.Now().Add(ttl),
+		Scope:  scope,
+	}
+
+	RandomBytes := make([]byte, 16)
+	_, err := rand.Read(RandomBytes)
+	if err != nil {
+		return nil, err
+	}
+
+	token.Plaintext = base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(RandomBytes)
+	hash := sha256.Sum256([]byte(token.Plaintext))
+	token.Hash = hash[:]
+	return token, nil
+}
+
+func (m *TokenModel) New(userID int64, ttl time.Duration, scope string) (*token, error) {
+	token, err := GenerateToken(userID, ttl, scope)
+	if err != nil {
+		return nil, err
+	}
+	err = m.Insert(token)
+	return token, err
+
+}
+
+func (m *TokenModel) Insert(token *token) error {
+	stmt := `INSERT INTO tokens(hash, user_id, expiry, scope)
+	VALUES($1, $2, $3, $4)`
+
+	args := []any{token.Hash, token.Userid, token.Expiry, token.Scope}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	_, err := m.DB.ExecContext(ctx, stmt, args...)
+	return err
+
+}
+
+func (m *TokenModel) DeleteForAllUsers(scope string, UserId int64) error {
+	stmt := `DELETE FROM tokens 
+	WHERE 	scope = $1 AND user_id = $2`
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	_, err := m.DB.ExecContext(ctx, stmt, scope, UserId)
+	return err
+}
