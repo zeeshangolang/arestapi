@@ -35,8 +35,7 @@ Make sure you have these installed:
    ```
 
 2. Set up your database connection (make sure your PostgreSQL is running and you have a database ready)
-you can copy the db schema from migration folder that would be easy for you to follow .
-
+you can copy the db schema from migration folder that would be easy for you to follow.
 
 3. Run the app:
    ```bash
@@ -78,10 +77,21 @@ you can copy the db schema from migration folder that would be easy for you to f
 3. You send that token to `/v1/users/activated` to activate your account.
 4. Now you can log in at `/v1/tokens/authentication` and start using the protected endpoints (like adding movies).
 
+## How the auth actually works
+
+This isn't JWT — it's simpler than that:
+
+1. When you need a token (for activation or login), the server generates a random string.
+2. It sends you that string as your plaintext token.
+3. But it only ever saves a **hashed** version of it in the database — never the plaintext.
+4. When you send your token back on future requests (`Authorization: Bearer <token>`), the server hashes it and checks for a match in the database.
+
+The nice part: since tokens live in the database, they can be revoked instantly just by deleting the row — something plain JWTs can't do without extra setup.
+
 ## Why I built it this way
 
 I wanted to actually understand things like:
-- how JWT/token-based auth works without just using a library that does everything for me
+- how token-based auth actually works under the hood (this uses random, hashed tokens stored in the database — not JWT) without just using a library that does everything for me
 - how background jobs work in Go (like sending emails without slowing down the response)
 - how to structure a Go project properly (handlers, models, routes all separated)
 
